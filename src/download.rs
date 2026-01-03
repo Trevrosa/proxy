@@ -1,6 +1,7 @@
 use axum::{
     body::Body,
     extract::{Path, State},
+    http::HeaderMap,
     response::IntoResponse,
 };
 use reqwest::Client;
@@ -8,8 +9,9 @@ use reqwest::Client;
 pub async fn download(
     State(client): State<Client>,
     Path(url): Path<String>,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse, String> {
-    let resp = match client.get(url).send().await {
+    let resp = match client.get(url).headers(headers).send().await {
         Ok(resp) => resp,
         Err(err) => {
             // TODO: do we want to hide the url from log?
