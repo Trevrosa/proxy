@@ -13,7 +13,7 @@ use axum::{
     routing::{any, get},
 };
 use tokio::{net::TcpListener, signal};
-use tower_http::timeout::TimeoutLayer;
+use tower_http::{services::ServeDir, timeout::TimeoutLayer};
 use tracing::{instrument, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
@@ -38,7 +38,8 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/dl/{*url}", get(download))
-        .route("/web/{*url}", any(proxy))
+        .route("/proxy/{*url}", any(proxy))
+        .fallback_service(ServeDir::new("./static"))
         .with_state(reqwest::Client::new())
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,

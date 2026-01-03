@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>proxy</title>
+    <script lang="javascript">
+        navigator.serviceWorker.register("sw.js", { scope: "." }).then((_reg) => {
+            console.log("service worker registered");
+
+            const params = new URLSearchParams(window.location.search);
+            const back = params.get("back");
+
+            if (back == null) {
+                return;
+            }
+
+            window.cookieStore.set("trev-proxy-service-worker-installed", "true");
+
+            window.location.replace(`./proxy/${back}`)
+        }, (err) => {
+            console.error(`service worker failed to register: ${err}`);
+        });
+    </script>
+</head>
+
+<body>
+    <noscript>This site requires JavaScript!</noscript>
+    <p>wait, installing service worker</p>
+</body>
+
+</html>
