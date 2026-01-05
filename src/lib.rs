@@ -40,55 +40,68 @@ pub async fn handle_forward_request(
     })
 }
 
+const URL_ATTRIBUTES: &str = "(src|href|action)";
+
 static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}(?-u:\b)([-a-zA-Z0-9()@:%_\+.~#?&/=]*)").expect("should be able to compile regex")
+    Regex::new(&format!(r#"{URL_ATTRIBUTES}=(")http"#)).expect("should be able to compile regex")
 });
 
 static REL_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?:((src|href)="))(/)"#).expect("should be able to compile regex")
+    Regex::new(&format!(r#"{URL_ATTRIBUTES}="(/)"#)).expect("should be able to compile regex")
 });
 
-pub fn rewrite_html_urls(mut html: String, target_url: &str, proxy_url_path: &str) -> String {
-    for url in URL_REGEX.find_iter(&html.clone()) {
-        tracing::debug!("found url at {} ({})", url.start(), url.as_str());
-        html.insert_str(url.start(), proxy_url_path);
-    }
+pub fn init_regexes() {
+    LazyLock::force(&URL_REGEX);
+    LazyLock::force(&REL_URL_REGEX);
+}
 
-    let rel_new_url = std::path::Path::new(proxy_url_path).join(target_url);
-    let rel_new_url = rel_new_url.to_string_lossy();
-
-    // let html = html
-    //     .replace(r#"src="/"#, &format!(r#"src="{rel_new_url}/"#))
-    //     .replace(r#"href="/"#, &format!(r#"href="{rel_new_url}/"#));
-
-    for captures in REL_URL_REGEX.captures_iter(&html.clone()) {
-        let url = captures
-            .get(3)
-            .expect("there should be three capture groups");
-        tracing::debug!(
-            "found rel url at {} ({})",
-            url.start(),
+fn rolling_replace(html: &mut String, regex: &Regex, replacement: &str, offset: usize) {
+    let mut matches = 0;
+    let mut new_offset = 0;
+    for captures in regex.captures_iter(&html.clone()) {
+        let url = captures.get(2).expect("there should be two capture groups");
+        matches += 1;
+        let idx = url.start() + new_offset + offset;
+        tracing::trace!(
+            "found url at {idx} (og: {}) ({})",
+            url.start() + offset,
             captures.get_match().as_str()
         );
-        html.insert_str(url.start(), &rel_new_url);
+        html.insert_str(idx, replacement);
+        new_offset += replacement.len();
     }
+    tracing::debug!("{matches} urls matched");
+}
+
+pub fn rewrite_html_urls(mut html: String, target_url: &str, proxy_url_path: &str) -> String {
+    rolling_replace(&mut html, &URL_REGEX, proxy_url_path, 1);
+
+    let rel_new_url = format!("{proxy_url_path}{target_url}/");
+    rolling_replace(&mut html, &REL_URL_REGEX, &rel_new_url, 0);
 
     html
 }
 
 #[cfg(test)]
-mod tests {
+mod rewrite_urls_tests {
     use tracing_test::traced_test;
 
-    #[test]
-    #[traced_test]
-    fn google_rewrite_urls() {
-        let html = reqwest::blocking::Client::new()
-            .get("https://www.google.com")
-            .send()
-            .expect("should be able to get google")
-            .text()
-            .expect("should be able to get html text");
-        super::rewrite_html_urls(html, "https://www.google.com", "localhost");
+    macro_rules! test_url {
+        ($name:ident, $url:literal) => {
+            #[test]
+            #[traced_test]
+            fn $name() {
+                let html = reqwest::blocking::Client::new()
+                    .get($url)
+                    .send()
+                    .expect("should be able to get url")
+                    .text()
+                    .expect("should be able to get html text");
+                super::rewrite_html_urls(html, $url, "localhost");
+            }
+        };
     }
+
+    test_url!(google, "https://www.google.com");
+    test_url!(github, "https://github.com");
 }

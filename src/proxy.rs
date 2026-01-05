@@ -3,21 +3,24 @@ use std::{env, sync::LazyLock};
 use axum::{
     body::{self, Body},
     extract::{Path, Request, State},
-    http::StatusCode,
+    http::{StatusCode, Uri},
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::CookieJar;
 use proxy::{filter_headers, handle_forward_request, rewrite_html_urls};
 use reqwest::Client;
 
-const WANTED_HEADERS: &[&str] = &["range", "user-agent", "authentication", "cookies"];
+const WANTED_HEADERS: &[&str] = &["range", "user-agent", "authentication", "cookies", "accept"];
 
 static PROXY_URL_PATH: LazyLock<String> = LazyLock::new(|| {
     let hostname = env::var("PROXY_HOSTNAME").expect("PROXY_HOSTNAME should be set");
-    std::path::Path::new(&hostname)
-        .join("proxy/")
-        .to_string_lossy()
-        .into_owned()
+    Uri::builder()
+        .scheme("https")
+        .authority(hostname)
+        .path_and_query("/proxy/")
+        .build()
+        .expect("built uri should be valid")
+        .to_string()
 });
 
 pub async fn proxy(
@@ -53,6 +56,8 @@ pub async fn proxy(
         .version(request.version)
         .body(body);
 
+    tracing::info!("proxying request");
+
     let resp = match handle_forward_request(request).await {
         Ok(resp) => resp,
         Err(err) => return err,
@@ -83,7 +88,7 @@ pub async fn proxy(
         Body::from_stream(resp.bytes_stream())
     };
 
-    tracing::info!("proxying request");
+    tracing::info!("sending response");
 
     (status, headers, body).into_response()
 }

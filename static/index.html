@@ -18,15 +18,17 @@
         if (back != null) {
             document.getElementById("msg").innerText = "installing service worker, wait..";
 
-            navigator.serviceWorker.register("sw.js", { scope: "." }).then((_reg) => {
+            navigator.serviceWorker.register("sw.js", { scope: "." }).then(async (_reg) => {
                 console.log("service worker registered");
 
-                window.cookieStore.set("trev-proxy-service-worker-installed", "true");
+                await window.cookieStore.set("trev-proxy-service-worker-installed", "true");
 
                 window.location.replace(`./proxy/${back}`)
             }, (err) => {
                 console.error(`service worker failed to register: ${err}`);
             });
+        } else if (params.get("reset") != null) {
+            window.cookieStore.delete("trev-proxy-service-worker-installed")
         }
     </script>
 </body>

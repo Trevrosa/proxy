@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use proxy::rewrite_html_urls;
+use proxy::{init_regexes, rewrite_html_urls};
 
 macro_rules! bench_url {
     ($name:ident, $url:literal) => {
@@ -13,7 +13,10 @@ macro_rules! bench_url {
 
             c.bench_function(stringify!($name), |b| {
                 b.iter_batched(
-                    || html.clone(),
+                    || {
+                        init_regexes();
+                        html.clone()
+                    },
                     |html| rewrite_html_urls(html, $url, "localhost/proxy"),
                     criterion::BatchSize::SmallInput,
                 )
