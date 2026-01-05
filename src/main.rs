@@ -36,6 +36,12 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    if env::var("PROXY_HOSTNAME").is_err() {
+        tracing::error!(
+            "env var `PROXY_HOSTNAME` should be set to the hostname the proxy is to be run at"
+        );
+    }
+
     let app = Router::new()
         .route("/dl/{*url}", get(download))
         .route("/proxy/{*url}", any(proxy))

@@ -1,14 +1,24 @@
+use std::{env, sync::LazyLock};
+
 use axum::{
     body::{self, Body},
     extract::{Path, Request, State},
-    http::{HeaderValue, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::CookieJar;
-use proxy::{filter_headers, handle_forward_request};
+use proxy::{filter_headers, handle_forward_request, rewrite_html_urls};
 use reqwest::Client;
 
 const WANTED_HEADERS: &[&str] = &["range", "user-agent", "authentication", "cookies"];
+
+static PROXY_URL_PATH: LazyLock<String> = LazyLock::new(|| {
+    let hostname = env::var("PROXY_HOSTNAME").expect("PROXY_HOSTNAME should be set");
+    std::path::Path::new(&hostname)
+        .join("proxy/")
+        .to_string_lossy()
+        .into_owned()
+});
 
 pub async fn proxy(
     State(client): State<Client>,
@@ -38,7 +48,7 @@ pub async fn proxy(
     };
 
     let request = client
-        .request(request.method, url)
+        .request(request.method, &url)
         .headers(filter_headers(request.headers, WANTED_HEADERS))
         .version(request.version)
         .body(body);
@@ -49,12 +59,29 @@ pub async fn proxy(
     };
 
     let status = resp.status();
-    let mut headers = resp.headers().clone();
-    headers.append(
-        "service-worker-allowed",
-        HeaderValue::from_str("/").expect("should be able to construct header value from str"),
-    );
-    let body = Body::from_stream(resp.bytes_stream());
+    let headers = resp.headers().clone();
+
+    let body = if headers
+        .get("content-type")
+        .is_some_and(|h| h.to_str().is_ok_and(|h| h.contains("text/html")))
+    {
+        let Ok(body) = resp.text().await else {
+            tracing::warn!("could not get response text");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not get the response text",
+            )
+                .into_response();
+        };
+
+        let body = rewrite_html_urls(body, &url, &PROXY_URL_PATH);
+
+        tracing::debug!("rewrote html resource");
+
+        Body::new(body)
+    } else {
+        Body::from_stream(resp.bytes_stream())
+    };
 
     tracing::info!("proxying request");
 
