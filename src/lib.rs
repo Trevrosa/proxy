@@ -40,7 +40,7 @@ pub async fn handle_forward_request(
     })
 }
 
-const URL_ATTRIBUTES: &str = "(src|href|action)";
+const URL_ATTRIBUTES: &str = "(src|href|action|content)";
 
 static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(r#"{URL_ATTRIBUTES}=(")http"#)).expect("should be able to compile regex")
@@ -55,7 +55,11 @@ pub fn init_regexes() {
     LazyLock::force(&REL_URL_REGEX);
 }
 
-fn rolling_replace(html: &mut String, regex: &Regex, replacement: &str, offset: usize) {
+// FIXME: handle urls that start with //
+
+fn rolling_insert(html: &mut String, regex: &Regex, replacement: &str, offset: usize) {
+    debug_assert!(regex.captures_len() >= 2);
+
     let mut matches = 0;
     let mut new_offset = 0;
     for captures in regex.captures_iter(&html.clone()) {
@@ -63,7 +67,7 @@ fn rolling_replace(html: &mut String, regex: &Regex, replacement: &str, offset: 
         matches += 1;
         let idx = url.start() + new_offset + offset;
         tracing::trace!(
-            "found url at {idx} (og: {}) ({})",
+            "found url at {idx} (og: {}) ({}), inserting {replacement}",
             url.start() + offset,
             captures.get_match().as_str()
         );
@@ -74,16 +78,17 @@ fn rolling_replace(html: &mut String, regex: &Regex, replacement: &str, offset: 
 }
 
 pub fn rewrite_html_urls(mut html: String, target_url: &str, proxy_url_path: &str) -> String {
-    rolling_replace(&mut html, &URL_REGEX, proxy_url_path, 1);
+    rolling_insert(&mut html, &URL_REGEX, proxy_url_path, 1);
 
     let rel_new_url = format!("{proxy_url_path}{target_url}/");
-    rolling_replace(&mut html, &REL_URL_REGEX, &rel_new_url, 0);
+    rolling_insert(&mut html, &REL_URL_REGEX, &rel_new_url, 0);
 
     html
 }
 
 #[cfg(test)]
 mod rewrite_urls_tests {
+    use std::time::Instant;
     use tracing_test::traced_test;
 
     macro_rules! test_url {
@@ -97,11 +102,15 @@ mod rewrite_urls_tests {
                     .expect("should be able to get url")
                     .text()
                     .expect("should be able to get html text");
+                let start = Instant::now();
                 super::rewrite_html_urls(html, $url, "localhost");
+                tracing::info!("took {:?}", start.elapsed());
             }
         };
     }
 
     test_url!(google, "https://www.google.com");
     test_url!(github, "https://github.com");
+    test_url!(youtube, "https://youtube.com");
+    test_url!(facebook, "https://facebook.com");
 }

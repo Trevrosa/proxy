@@ -31,6 +31,25 @@ pub async fn proxy(
 ) -> Response {
     let (request, body) = request.into_parts();
 
+    let url = match url.parse::<Uri>() {
+        Ok(uri) => 'ok: {
+            let Some(scheme) = uri.scheme() else {
+                break 'ok url;
+            };
+            let Some(auth) = uri.authority() else {
+                break 'ok url;
+            };
+            let Some(path) = uri.path_and_query() else {
+                break 'ok url;
+            };
+
+            // ensure only one /
+            let path = path.as_str().trim_start_matches('/');
+            format!("{scheme}://{auth}/{path}")
+        }
+        Err(_) => url,
+    };
+
     if cookies.get("trev-proxy-service-worker-installed").is_none() {
         return Redirect::temporary(&format!("/?back={url}")).into_response();
     }
@@ -88,7 +107,7 @@ pub async fn proxy(
         Body::from_stream(resp.bytes_stream())
     };
 
-    tracing::info!("sending response");
+    tracing::info!("sending response {status}");
 
     (status, headers, body).into_response()
 }
