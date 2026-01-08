@@ -36,7 +36,6 @@ pub async fn proxy(State(client): State<Client>, cookies: CookieJar, request: Re
         .split("/proxy/")
         .nth(1)
         .expect("this route is /proxy/...");
-    dbg!(url);
     let url = match url.parse::<Uri>() {
         Ok(uri) => 'ok: {
             let Some(scheme) = uri.scheme() else {
