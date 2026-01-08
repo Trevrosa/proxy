@@ -87,6 +87,29 @@ pub fn rewrite_html_urls(mut html: String, target_url: &str, proxy_url_path: &st
 }
 
 #[cfg(test)]
+mod tests {
+    use axum::http::{HeaderMap, HeaderValue};
+
+    #[test]
+    fn filter_headers() {
+        let empty = HeaderValue::from_static("");
+        let mut a = HeaderMap::new();
+        a.append("Accept", empty.clone());
+        a.append("range", empty.clone());
+        a.append("connection", empty.clone());
+        a.append("host", empty.clone());
+        a.append("User-agent", empty.clone());
+        a.append("User-Agent", empty.clone());
+        a.append("sec-fetch-dest", empty);
+
+        let wanted = &["user-agent", "accept", "range"];
+        let filtered = super::filter_headers(a, wanted);
+
+        assert!(filtered.keys().all(|n| wanted.contains(&n.as_str())));
+    }
+}
+
+#[cfg(test)]
 mod rewrite_urls_tests {
     use std::time::Instant;
     use tracing_test::traced_test;
