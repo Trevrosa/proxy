@@ -2,7 +2,7 @@ use std::{env, sync::LazyLock};
 
 use axum::{
     body::{self, Body},
-    extract::{Path, Request, State},
+    extract::{Request, State},
     http::{StatusCode, Uri},
     response::{IntoResponse, Redirect, Response},
 };
@@ -23,14 +23,20 @@ static PROXY_URL_PATH: LazyLock<String> = LazyLock::new(|| {
         .to_string()
 });
 
-pub async fn proxy(
-    State(client): State<Client>,
-    Path(url): Path<String>,
-    cookies: CookieJar,
-    request: Request,
-) -> Response {
+pub async fn proxy(State(client): State<Client>, cookies: CookieJar, request: Request) -> Response {
     let (request, body) = request.into_parts();
 
+    let Some(url) = request.uri.path_and_query() else {
+        tracing::debug!("received bad url");
+        return (StatusCode::BAD_REQUEST, "invalid url").into_response();
+    };
+
+    let url = url
+        .as_str()
+        .split("/proxy/")
+        .nth(1)
+        .expect("this route is /proxy/...");
+    dbg!(url);
     let url = match url.parse::<Uri>() {
         Ok(uri) => 'ok: {
             let Some(scheme) = uri.scheme() else {
@@ -45,7 +51,7 @@ pub async fn proxy(
 
             // ensure only one /
             let path = path.as_str().trim_start_matches('/');
-            format!("{scheme}://{auth}/{path}")
+            &format!("{scheme}://{auth}/{path}")
         }
         Err(_) => url,
     };
@@ -70,7 +76,7 @@ pub async fn proxy(
     };
 
     let request = client
-        .request(request.method, &url)
+        .request(request.method, url)
         .headers(filter_headers(request.headers, WANTED_HEADERS))
         .version(request.version)
         .body(body);
@@ -98,7 +104,7 @@ pub async fn proxy(
                 .into_response();
         };
 
-        let body = rewrite_html_urls(body, &url, &PROXY_URL_PATH);
+        let body = rewrite_html_urls(body, url, &PROXY_URL_PATH);
 
         tracing::debug!("rewrote html resource");
 
