@@ -31,20 +31,18 @@ pub async fn proxy(State(client): State<Client>, cookies: CookieJar, request: Re
         return (StatusCode::BAD_REQUEST, "invalid url").into_response();
     };
 
-    let url = url
-        .as_str()
-        .split("/proxy/")
-        .nth(1)
-        .expect("this route is /proxy/...");
+    // index:        01234567
+    // this route is /proxy/...
+    let url = &url.as_str()[7..];
     let url = match url.parse::<Uri>() {
-        Ok(uri) => 'ok: {
-            let Some(scheme) = uri.scheme() else {
+        Ok(parsed) => 'ok: {
+            let Some(scheme) = parsed.scheme() else {
                 break 'ok url;
             };
-            let Some(auth) = uri.authority() else {
+            let Some(auth) = parsed.authority() else {
                 break 'ok url;
             };
-            let Some(path) = uri.path_and_query() else {
+            let Some(path) = parsed.path_and_query() else {
                 break 'ok url;
             };
 
